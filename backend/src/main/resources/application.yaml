@@ -1,0 +1,93 @@
+spring:
+  application:
+    name: community
+  profiles:
+    default: dev            # 无显式指定时走 dev；生产用 SPRING_PROFILES_ACTIVE=prod
+
+  datasource:
+    url: "jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:demo_db}?characterEncoding=UTF-8&connectionTimeZone=Asia/Shanghai&forceConnectionTimeZoneToSession=true&allowPublicKeyRetrieval=true&sslMode=DISABLED&rewriteBatchedStatements=true"
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:Root@123456}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      pool-name: CommunityHikari
+      maximum-pool-size: ${DB_POOL_MAX:10}
+      minimum-idle: ${DB_POOL_MIN:2}
+      connection-timeout: 3000       # 3s 拿不到连接就失败，别让请求一直挂着
+      idle-timeout: 600000
+      max-lifetime: 1800000          # 必须小于 MySQL wait_timeout(默认 8h)，但要留余量
+#      connection-test-query: SELECT 1
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    encoding: UTF-8
+    baseline-on-migrate: false       # 已有库才开，新库开了会掩盖漏掉的迁移
+    validate-on-migrate: true        # 校验和不对就启动失败
+    clean-disabled: true             # 防止误执行 clean 清库
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:Redis@123456}
+      database: 0
+      timeout: 2s
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:admin}
+    password: ${RABBITMQ_PASSWORD:Rabbit@123456}
+    virtual-host: /
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.y1.community.**.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    cache-enabled: false            # 二级缓存默认关，避免脏读
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+  global-config:
+    banner: false
+    db-config:
+      id-type: assign_id            # 雪花 ID，主键必须是 BIGINT
+      logic-delete-field: deleted   # 实体里有 deleted 字段即自动逻辑删除
+      logic-not-delete-value: 0
+      logic-delete-value: 1
+      table-prefix: t_              # 实体 User → 表 t_user，与 V1 建表脚本保持一致
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+  tomcat:
+    threads:
+      max: 200
+      min-spare: 10
+    max-connections: 8192
+    accept-count: 200
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when-authorized
+  health:
+    db:
+      enabled: true                  # 健康检查会真连一次库，能提前暴露连接池问题
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+
+logging:
+  level:
+    root: info
+    com.y1.community: info
