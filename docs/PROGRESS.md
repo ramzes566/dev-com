@@ -82,6 +82,10 @@
 | 最小用户链路 | [UserController.java](../backend/src/main/java/com/y1/community/user/controller/UserController.java) `GET /api/users` + MP `ServiceImpl` |
 | 迁移已跑通 | [V1__init_user.sql](../backend/src/main/resources/db/migration/V1__init_user.sql)（`t_user`）、[V2__seed_user.sql](../backend/src/main/resources/db/migration/V2__seed_user.sql)（demo 用户） |
 | 自动化测试绿 | `backend/target/surefire-reports`：`CommunityApplicationTests`、`UserApiTest` 各 1 条，2026-11-08 00:22–00:23 通过（Testcontainers MySQL 8.4） |
+| 本地依赖已起 | `docker ps`：`mysql84` / `redis74` / `rabbitmq313` 均 healthy；端口 3306/6379/5672 可连 |
+| 迁移已在本地库生效 | `demo_db.flyway_schema_history` 有 V1、V2 两条 success=1；表为 `t_user` + 历史表；种子行 `demo/演示用户`（UTF-8 正常） |
+| 应用实测可启动 | 2026-11-08 22:39 本机启动：Java 24.0.1、Boot 3.5.16、Tomcat 8080、Flyway `Successfully validated 2 migrations`、8s 内就绪 |
+| 探活实测为真 | `GET /api/Health` → `{"redis":"ok","db":"ok","mq":"ok"}`（Redis/MQ 断开时会返回 `fail: xxx`，不是写死的） |
 | 前端骨架 | Vue 3.5 + Vite 8 + TS，[vite.config.ts](../frontend/vite.config.ts) 代理 `/api` → 8080，[App.vue](../frontend/src/App.vue) 为骨架自检页 |
 | 本地依赖编排 | [docker-compose.yml](../deploy/docker-compose.yml)：MySQL 8.4 / Redis 7.4 / RabbitMQ 3.13，均带 healthcheck 与数据卷 |
 | 版本控制 | 3 个提交（`first step` → `初始化前后端项目` → `fix`）；`backend` 曾被误记为 gitlink，已于 2026-11-08 修复为普通目录跟踪 |
@@ -110,7 +114,7 @@
 |---|---|---|---|
 | D1 | 表名是否保留 `t_` 前缀 | **去掉前缀，按设计稿 10 张表** | 后续第 9/10/13 步的 SQL、文档、面试讲述都引用 `interaction`/`feed_inbox`；前缀会让每处都要翻译。MP 的 `table-prefix` 同时删掉 |
 | D2 | V1/V2 怎么处理 | **合并重写为 `V1__init.sql`（10 表）+ `V2__seed.sql`，一次性重置 `demo_db`** | 当前只有 1 行种子、未上线，重写成本最低；若保留旧 V1 再 `V3+ALTER`，会留下与设计稿不一致的历史包袱。重置后从 V3 起严格 append-only |
-| D3 | 健康检查路径 | **统一小写 `/api/health`**，同步改 [App.vue](../frontend/src/App.vue) | 现在代码是 `/api/Health`，前后端恰好一致；但云服务器/网关/压测脚本按小写写会 404，越早统一越好 |
+| D3 | 健康检查路径 | **统一小写 `/api/health`**，同步改 [App.vue](../frontend/src/App.vue) | 实测 `/api/health` 返回 **404**，只有 `/api/Health` 是 200；网关、压测脚本、监控默认都写小写，越早统一越好 |
 | D4 | 构建可复现 | **补 Maven Wrapper（mvnw）** | 本机 `mvn` 不在 PATH，目前只有 IDE 能构建；压测机、CI、云服务器都需要 `./mvnw` |
 
 > D2 的重置命令（确认后执行）：
@@ -123,18 +127,20 @@
 
 | # | 风险 | 影响 | 处置 |
 |---|---|---|---|
-| R1 | Docker 当前未启动，3306/6379/5672/8080 均未监听 | 第 2 步无法做「启动 + SHOW TABLES」验收 | 开工第一条命令：`docker compose -f deploy/docker-compose.yml up -d`，等 healthcheck 全绿 |
+| R1 | 三个容器已 healthy，但**应用未启动**（8080 无监听） | 第 2 步验收需要「应用启动 + SHOW TABLES」，当前没有应用进程 | 验收前先启动应用（IDE 或 `mvn spring-boot:run`）；容器无需重启 |
 | R2 | 改 V1 触发 Flyway checksum 冲突 | 应用启动失败，误以为是代码问题 | 按 D2 重置 `demo_db`；以后只追加 V3+ |
 | R3 | 无 mvnw、`mvn` 不在 PATH | CI/压测机/服务器构建不可复现 | 第 2 步内补 wrapper（D4） |
 | R4 | 种子密码明文 `demo` | 第 3 步接 BCrypt 时登录失败 | 第 2 步种子直接写 BCrypt 串，或第 3 步用 V3 更新 |
 | R5 | `/api/Health` 的 RabbitMQ 探活无超时 | broker 不可达时探活可能长时间阻塞 | 给 `spring.rabbitmq.connection-timeout` 设 2s，或探活改走 Actuator |
 | R6 | `.idea/dataSources.xml` 等 IDE 文件已入库 | 含本地连接串（无明文密码），换机易冲突 | 可接受；后续可整体忽略 `.idea/` |
+| R7 | `GET /api/users` 直接返回实体，实测把 `password` 明文吐给前端 | 接口公网可达即泄露凭据；第 3 步接入登录后危害放大 | 第 2/3 步引入 VO 或 `@JsonIgnore`，并加「响应不含 password」的测试断言 |
+| R8 | Flyway 11 只声明支持到 MySQL 8.1，连 8.4 会打 `upgrade recommended` WARN | 只是告警，不影响迁移 | 忽略；若换 Flyway 版本再评估 |
 
 ---
 
 ## 7. 第 2 步 Definition of Done
 
-- [ ] `docker compose up -d` 后 MySQL/Redis/RabbitMQ 全部 healthy
+- [ ] 三个容器 healthy（当前已满足）
 - [ ] 启动应用，Flyway 日志出现 `Successfully applied 2 migrations`
 - [ ] `SHOW TABLES` 恰好 10 张；`SHOW CREATE TABLE interaction` 可见 `uk_user_target_type`
 - [ ] 手工插两条相同 `(user_id,target_type,target_id,type)`，第二条报 `Duplicate entry`
@@ -149,4 +155,4 @@
 
 | 日期 | 变更 |
 |---|---|
-| 2026-11-08 | 建立看板；确认第 1 步完成、第 2 步未开始；修复 `backend` 误记为 gitlink 的问题；登记 4 项待决事项与 6 项风险 |
+| 2026-11-08 | 建立看板；实测第 1 步（应用启动、`/api/Health` 三项 ok、`/api/users` 返回种子数据）；确认第 2 步未开始；修复 `backend` 误记为 gitlink；登记 4 项待决事项与 8 项风险（含 `/api/users` 泄漏 password） |
