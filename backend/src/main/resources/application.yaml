@@ -52,10 +52,7 @@ mybatis-plus:
     banner: false
     db-config:
       id-type: assign_id            # 雪花 ID，主键必须是 BIGINT
-      logic-delete-field: deleted   # 实体里有 deleted 字段即自动逻辑删除
-      logic-not-delete-value: 0
-      logic-delete-value: 1
-      table-prefix: t_              # 实体 User → 表 t_user，与 V1 建表脚本保持一致
+
 
 server:
   port: ${SERVER_PORT:8080}
