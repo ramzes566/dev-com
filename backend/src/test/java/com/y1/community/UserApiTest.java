@@ -12,7 +12,11 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.containers.MySQLContainer;
 
 
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
+
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.hamcrest.CoreMatchers.hasItem;
@@ -24,7 +28,7 @@ import static org.hamcrest.CoreMatchers.hasItem;
 public class UserApiTest {
 
     @Container
-    static MySQLContainer mysql = new MySQLContainer("mysql:8.4");
+    static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.4");
 
     @DynamicPropertySource
     static void datasource(DynamicPropertyRegistry registry) {
@@ -42,4 +46,15 @@ public class UserApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[*].username", hasItem("demo")));
     }
+
+    @Test
+    void responseMustNotLeakPassword() throws Exception {
+        mvc.perform(get("/api/users"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].username").exists())
+                .andExpect(jsonPath("$[0].passwordHash").doesNotExist())
+                .andExpect(jsonPath("$[0].password").doesNotExist())
+                .andExpect(content().string(not(containsString("$2a$"))));
+    }
+
 }

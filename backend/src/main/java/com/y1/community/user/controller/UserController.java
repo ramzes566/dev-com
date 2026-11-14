@@ -1,7 +1,7 @@
 package com.y1.community.user.controller;
 
-import com.y1.community.user.entity.User;
 import com.y1.community.user.service.UserService;
+import com.y1.community.user.vo.UserVO;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -18,7 +18,10 @@ public class UserController {
     }
 
     @GetMapping
-    public List<User> list() {
-        return userService.list();
+    public List<UserVO> list() {
+        return userService.list()
+                .stream()
+                .map(UserVO::from)
+                .toList();
     }
 }

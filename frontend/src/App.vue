@@ -5,7 +5,7 @@ const health = ref<Record<string, string>>({})
 
 async function check() {
   try {
-    const res = await fetch('/api/Health')
+    const res = await fetch('/api/health')
     console.log('响应对象', res)
     if (!res.ok) {
       throw new Error(`http状态码：${res.status}`)

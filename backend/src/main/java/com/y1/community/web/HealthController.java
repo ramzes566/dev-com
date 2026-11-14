@@ -23,7 +23,7 @@ public class HealthController {
         this.rabbit = rabbit;
     }
 
-    @GetMapping("/api/Health")
+    @GetMapping("/api/health")
     public Map<String, String> health() {
         Map<String, String> result = new LinkedHashMap<>();
         result.put("redis", probe(() -> redis.hasKey("__health__")));
