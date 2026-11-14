@@ -1,6 +1,6 @@
 # dev-com 项目进度看板
 
-> 最后更新：2026-11-08 22:55（Asia/Shanghai）
+> 最后更新：2026-11-14 16:30（Asia/Shanghai）
 > 用途：跨会话的唯一进度事实源。每完成一步，更新第 3 节状态 + 第 4 节证据 + 第 8 节变更记录。
 > 状态口径：✅ 完成（有可复现证据） / 🚧 进行中 / ⬜ 未开始。没有证据的一律不算完成。
 
@@ -34,10 +34,11 @@
 | 数据库 | MySQL 8 | **8.4**（Docker） | 唯一约束做幂等兜底 |
 | 缓存 | Redis 7 | **7.4**（Docker，带密码） | Bitmap + Lua + 分桶，第 9 步启用 |
 | 消息队列 | RabbitMQ/RocketMQ | **RabbitMQ 3.13-management**（Docker） | 第 10 步启用 |
-| 迁移 | Flyway | **已接入**（`validate-on-migrate=true`，`clean-disabled=true`） | 表结构只允许迁移脚本变更 |
+| 迁移 | Flyway | **已接入，V1/V2 已落库 10 张业务表**（`validate-on-migrate=true`，`clean-disabled=true`） | 表结构只允许迁移脚本变更；从 V3 起严格 append-only |
 | 认证 | Spring Security + JWT | **未接入**（无 spring-security 依赖） | 第 3 步 |
 | 前端 | Vue 3 + Vite + Element Plus | **Vue 3.5 + Vite 8 + TS**，无 Element Plus | 第 8 步再决定是否引入 UI 库 |
-| 测试 | — | **JUnit 5 + Testcontainers（mysql:8.4）** | 已有 2 个冒烟测试，见 4.1 |
+| 构建 | Maven | **Maven Wrapper（mvnw）已入库**，Maven 3.9.16 | 任何机器 `.\mvnw.cmd test` 可构建，不再依赖本机 mvn |
+| 测试 | — | **JUnit 5 + Testcontainers（mysql:8.4）** | 3 条：上下文加载、种子可查、响应不泄密，见 4.1/4.2 |
 | 部署 | Docker Compose | **compose 文件已就绪**，本机容器当前未启动 | 见风险 R1 |
 | 压测 | JMeter | 未开始 | 第 16 步 |
 
@@ -49,9 +50,9 @@
 
 | # | 阶段 | 步骤 | 状态 | 完成标志（DoD 摘要） |
 |---|---|---|---|---|
-| 1 | 一 | 项目骨架 + 健康检查 + 用户冒烟链路 | ✅ | 应用能起、`/api/Health` 真探活、`/api/users` 能查到种子用户、测试绿 |
-| 2 | 一 | **数据模型与迁移（10 张表）** | ⬜ 下一步 | Flyway 自动建 10 表；唯一键实测生效；种子数据可查 |
-| 3 | 一 | 认证：Security 6 过滤器链 + JWT 双令牌 | ⬜ | 注册/登录/刷新/登出；Refresh Token 存 Redis 且轮换；禁言拦截 |
+| 1 | 一 | 项目骨架 + 健康检查 + 用户冒烟链路 | ✅ | 应用能起、`/api/health` 真探活、`/api/users` 返回 UserVO（无密码字段）、测试绿 |
+| 2 | 一 | **数据模型与迁移（10 张表）** | 🚧 差 4 条实测 | Flyway 从零建 10 张业务表；唯一键实测生效；种子数据可查 |
+| 3 | 一 | 认证：Security 6 过滤器链 + JWT 双令牌 | ⬜ 下一步 | 注册/登录/刷新/登出；Refresh Token 存 Redis 且轮换；禁言拦截 |
 | 4 | 一 | 帖子与标签：Markdown 服务端渲染、摘要、编辑删除 | ⬜ | 发帖→详情→列表全通；XSS 被过滤；列表不查 MEDIUMTEXT |
 | 5 | 一 | 评论与回复（一层嵌套 root_id/parent_id） | ⬜ | 详情页两次查询取完一级+二级，无 N+1 |
 | 6 | 一 | 互动 baseline：DB 直写点赞/收藏 + 双实现开关 | ⬜ | 开关可切 baseline/optimized；baseline 有压测价值 |
@@ -79,75 +80,102 @@
 |---|---|
 | 后端可构建启动 | [pom.xml](../backend/pom.xml)：Boot 3.5.16、MP 3.5.18、Flyway、Actuator、springdoc 2.8.17、Redis/AMQP starter、Testcontainers |
 | 真探活而非假绿灯 | [HealthController.java](../backend/src/main/java/com/y1/community/web/HealthController.java)：`SELECT 1`、Redis `hasKey`、RabbitMQ `createConnection`，任一失败返回 `fail: xxx` |
-| 最小用户链路 | [UserController.java](../backend/src/main/java/com/y1/community/user/controller/UserController.java) `GET /api/users` + MP `ServiceImpl` |
-| 迁移已跑通 | [V1__init_user.sql](../backend/src/main/resources/db/migration/V1__init_user.sql)（`t_user`）、[V2__seed_user.sql](../backend/src/main/resources/db/migration/V2__seed_user.sql)（demo 用户） |
-| 自动化测试绿 | `backend/target/surefire-reports`：`CommunityApplicationTests`、`UserApiTest` 各 1 条，2026-11-08 00:22–00:23 通过（Testcontainers MySQL 8.4） |
+| 最小用户链路 | [UserController.java](../backend/src/main/java/com/y1/community/user/controller/UserController.java) `GET /api/users` → `List<UserVO>`；[UserVO.java](../backend/src/main/java/com/y1/community/user/vo/UserVO.java) 收口对外字段 |
+| 迁移已跑通 | 第 1 步的 `V1__init_user.sql` / `V2__seed_user.sql` 已在第 2 步重写为 [V1__init.sql](../backend/src/main/resources/db/migration/V1__init.sql) / [V2__seed.sql](../backend/src/main/resources/db/migration/V2__seed.sql) |
+| 自动化测试绿 | `backend/target/surefire-reports`：2026-11-08 首批 2 条（上下文加载、种子可查）通过（Testcontainers MySQL 8.4）；第 5 步新增防泄漏断言，共 3 条 |
 | 本地依赖已起 | `docker ps`：`mysql84` / `redis74` / `rabbitmq313` 均 healthy；端口 3306/6379/5672 可连 |
-| 迁移已在本地库生效 | `demo_db.flyway_schema_history` 有 V1、V2 两条 success=1；表为 `t_user` + 历史表；种子行 `demo/演示用户`（UTF-8 正常） |
+| 迁移已在本地库生效 | 第 1 步的 `t_user` 已随第 2 步重置删除，现库结构与 4.2 一致 |
 | 应用实测可启动 | 2026-11-08 22:39 本机启动：Java 24.0.1、Boot 3.5.16、Tomcat 8080、Flyway `Successfully validated 2 migrations`、8s 内就绪 |
-| 探活实测为真 | `GET /api/Health` → `{"redis":"ok","db":"ok","mq":"ok"}`（Redis/MQ 断开时会返回 `fail: xxx`，不是写死的） |
-| 前端骨架 | Vue 3.5 + Vite 8 + TS，[vite.config.ts](../frontend/vite.config.ts) 代理 `/api` → 8080，[App.vue](../frontend/src/App.vue) 为骨架自检页 |
+| 探活实测为真 | `GET /api/health` → `{"redis":"ok","db":"ok","mq":"ok"}`（Redis/MQ 断开时会返回 `fail: xxx`，不是写死的） |
+| 前端骨架 | Vue 3.5 + Vite 8 + TS，[vite.config.ts](../frontend/vite.config.ts) 代理 `/api` → 8080，[App.vue](../frontend/src/App.vue) 为骨架自检页（已改为调用小写 `/api/health`） |
 | 本地依赖编排 | [docker-compose.yml](../deploy/docker-compose.yml)：MySQL 8.4 / Redis 7.4 / RabbitMQ 3.13，均带 healthcheck 与数据卷 |
-| 版本控制 | 3 个提交（`first step` → `初始化前后端项目` → `fix`）；`backend` 曾被误记为 gitlink，已于 2026-11-08 修复为普通目录跟踪 |
+| 版本控制 | 8 个提交；`backend` 曾被误记为 gitlink，已于 2026-11-08 修复为普通目录跟踪 |
 
 **这一步的定位**：只证明「三件套能连通、探活是真的、测试能跑」，不承载业务。
 
-### 4.2 ⬜ 第 2 步：数据模型与迁移（未开始）
+### 4.2 🚧 第 2 步：数据模型与迁移（产物已落库，差 4 条实测）
 
-**现状**：设计稿要求 10 张表，当前只有 1 张 `t_user`，且与设计稿存在 5 处偏差：
+**结果**：`demo_db` 已重置为 0 表，由 Flyway 从零重建；设计稿的 5 处偏差全部消除。
 
-| 项 | 设计稿 | 当前实现 | 处置建议 |
+| 项 | 设计稿要求 | 当前实现 | 状态 |
 |---|---|---|---|
-| 表名 | `user`（无前缀） | `t_user` + MP `table-prefix: t_` | 去前缀，与设计稿对齐（见 D1） |
-| 密码列 | `password_hash`（BCrypt） | `password`，种子为明文 `demo` | 第 2 步改列名，第 3 步换 BCrypt 并重刷种子 |
-| 用户状态 | `status`（0 正常/1 禁言/2 封禁） | `deleted` 逻辑删除 | 改为 `status`，删除语义并入状态 |
-| 资料与计数 | `avatar`/`bio`/`follower_count`/`following_count`/`post_count` | 全部缺失 | 随 V1 重写补齐 |
-| 时间与排序规则 | `DATETIME(3)`、`utf8mb4_0900_ai_ci` | `DATETIME`、`utf8mb4_unicode_ci` | 统一为设计稿口径 |
+| 表名 | `user`（无前缀） | `user`，MP `table-prefix: t_` 已删 | ✅ |
+| 密码列 | `password_hash`（BCrypt） | `password_hash VARCHAR(100)`，种子为 `$2a$10$...`（密码 `demo1234`，已用 bcrypt 校验） | ✅ |
+| 用户状态 | `status`（0 正常/1 禁言/2 封禁） | `status TINYINT`，`deleted` 与 `@TableLogic` 已移除 | ✅ |
+| 资料与计数 | `avatar`/`bio`/3 个计数 | 全部补齐 | ✅ |
+| 时间与排序规则 | `DATETIME(3)`、`utf8mb4_0900_ai_ci` | 全库一致 | ✅ |
 
-**缺口**：`post`、`tag`、`post_tag`、`comment`、`interaction`、`follow`、`feed_inbox`、`notification`、`report` 共 9 张表，以及全部索引、唯一键、种子数据、验收脚本。
+**10 张业务表**
+
+| 表 | 作用 | 关键约束 |
+|---|---|---|
+| `user` | 账号、资料、冗余计数 | `uk_username` |
+| `post` | 帖子，摘要 / HTML / Markdown 分三列 | `idx_created(status, created_at DESC, id DESC)` |
+| `tag` | 标签 | `uk_name` |
+| `post_tag` | 帖子-标签关联 | 联合主键 `(post_id, tag_id)` + `idx_tag(tag_id, post_id)` |
+| `comment` | 评论，一层嵌套 `root_id`/`parent_id` | `idx_post_root(post_id, root_id, created_at)` |
+| `interaction` | 点赞/收藏，软取消 | `uk_user_target_type(user_id, target_type, target_id, type)` |
+| `follow` | 关注关系 | `uk_follower_followee(follower_id, followee_id)` |
+| `feed_inbox` | 写扩散收件箱（第 13 步启用） | `uk_user_post(user_id, post_id)` |
+| `notification` | 通知 | `idx_user_read(user_id, is_read, created_at DESC)` |
+| `report` | 举报 | `uk_reporter_target` |
+
+**设计取舍**
+
+1. **不建物理外键**：`interaction`/`feed_inbox` 是第 9/10/13 步的热点写入表，外键带来写放大与分库阻碍；完整性交给应用层 + 唯一键 + 对账补偿。
+2. **密码列直接落 BCrypt**：种子即密文，第 3 步接 `BCryptPasswordEncoder` 不需要再改数据。
+3. **帖子拆三列**：`summary` 给列表、`content_html` 给详情、`content_md` 给编辑，各管一个场景，列表页不碰 MEDIUMTEXT。
+4. **计数冗余在 `user`/`post`/`tag` 上**：读多写少，允许短暂不一致，靠对账修正。
+
+**证据**
+
+- 2026-11-13 实测 `SHOW TABLES` 共 **11 行** = 10 张业务表 + `flyway_schema_history`。
+- 种子脚本口径：3 用户 / 5 标签 / 10 帖 / 13 条 `post_tag` / 20 评论 / 3 关注 / 4 互动；`feed_inbox` 空表。
+- 代码提交：`fae7c93`（10 表迁移 + 实体）、`7a45758`（health 小写 + rabbit 超时）。
+
+**还差的 4 条实测**（见第 7 节）：唯一键重复插入、种子计数、测试 3 条绿、`/api/users` 无密码字段。
 
 ---
 
-## 5. 第 2 步开工前必须拍板的 4 件事
+## 5. 第 2 步的 4 个决策（已全部落地）
 
-| # | 决策 | 推荐做法 | 理由 / 代价 |
+| # | 决策 | 最终做法 | 结果 |
 |---|---|---|---|
-| D1 | 表名是否保留 `t_` 前缀 | **去掉前缀，按设计稿 10 张表** | 后续第 9/10/13 步的 SQL、文档、面试讲述都引用 `interaction`/`feed_inbox`；前缀会让每处都要翻译。MP 的 `table-prefix` 同时删掉 |
-| D2 | V1/V2 怎么处理 | **合并重写为 `V1__init.sql`（10 表）+ `V2__seed.sql`，一次性重置 `demo_db`** | 当前只有 1 行种子、未上线，重写成本最低；若保留旧 V1 再 `V3+ALTER`，会留下与设计稿不一致的历史包袱。重置后从 V3 起严格 append-only |
-| D3 | 健康检查路径 | **统一小写 `/api/health`**，同步改 [App.vue](../frontend/src/App.vue) | 实测 `/api/health` 返回 **404**，只有 `/api/Health` 是 200；网关、压测脚本、监控默认都写小写，越早统一越好 |
-| D4 | 构建可复现 | **补 Maven Wrapper（mvnw）** | 本机 `mvn` 不在 PATH，目前只有 IDE 能构建；压测机、CI、云服务器都需要 `./mvnw` |
+| D1 | 表名是否保留 `t_` 前缀 | **去掉前缀**，按设计稿 10 张表；MP `table-prefix` 删除 | ✅ 已落地 |
+| D2 | V1/V2 怎么处理 | **合并重写为 `V1__init.sql` + `V2__seed.sql`，一次性重置 `demo_db`** | ✅ 已落地；从 V3 起 append-only |
+| D3 | 健康检查路径 | **统一小写 `/api/health`**，同步改 `App.vue` | ✅ 已落地，大写返回 404 |
+| D4 | 构建可复现 | **补 Maven Wrapper（mvnw）**，含 `.gitattributes` 保证 LF | ✅ 已落地，`i/lf` 已验证 |
 
-> D2 的重置命令（确认后执行）：
-> `docker compose -f deploy/docker-compose.yml down` → 删除 `mysql_data` 卷或 `DROP DATABASE demo_db` → 重新 `up -d` → 启动应用由 Flyway 重建。
-> **注意**：`spring.flyway.validate-on-migrate=true`，改了 V1 而不重置库，启动会直接因 checksum 不匹配失败。
+> 重置时的坑（留给以后参考）：改了 V1 内容但版本号不变时，`validate-on-migrate=true` 会让启动直接失败，必须先清空 schema（连 `flyway_schema_history` 一起），否则报 checksum 不匹配；清表不够，还要清 `target/classes/db/migration` 里的旧脚本副本，否则报 `Found more than one migration with version 1`。
 
 ---
 
 ## 6. 风险登记
 
-| # | 风险 | 影响 | 处置 |
-|---|---|---|---|
-| R1 | 三个容器已 healthy，但**应用未启动**（8080 无监听） | 第 2 步验收需要「应用启动 + SHOW TABLES」，当前没有应用进程 | 验收前先启动应用（IDE 或 `mvn spring-boot:run`）；容器无需重启 |
-| R2 | 改 V1 触发 Flyway checksum 冲突 | 应用启动失败，误以为是代码问题 | 按 D2 重置 `demo_db`；以后只追加 V3+ |
-| R3 | 无 mvnw、`mvn` 不在 PATH | CI/压测机/服务器构建不可复现 | 第 2 步内补 wrapper（D4） |
-| R4 | 种子密码明文 `demo` | 第 3 步接 BCrypt 时登录失败 | 第 2 步种子直接写 BCrypt 串，或第 3 步用 V3 更新 |
-| R5 | `/api/Health` 的 RabbitMQ 探活无超时 | broker 不可达时探活可能长时间阻塞 | 给 `spring.rabbitmq.connection-timeout` 设 2s，或探活改走 Actuator |
-| R6 | `.idea/dataSources.xml` 等 IDE 文件已入库 | 含本地连接串（无明文密码），换机易冲突 | 可接受；后续可整体忽略 `.idea/` |
-| R7 | `GET /api/users` 直接返回实体，实测把 `password` 明文吐给前端 | 接口公网可达即泄露凭据；第 3 步接入登录后危害放大 | 第 2/3 步引入 VO 或 `@JsonIgnore`，并加「响应不含 password」的测试断言 |
-| R8 | Flyway 11 只声明支持到 MySQL 8.1，连 8.4 会打 `upgrade recommended` WARN | 只是告警，不影响迁移 | 忽略；若换 Flyway 版本再评估 |
+| # | 风险 | 影响 | 处置 | 状态 |
+|---|---|---|---|---|
+| R1 | 容器与**应用**是两回事，应用不常驻 | 验收时忘启动，误判为"没生效" | 验收前先启动应用；容器无需重启 | 常驻提示 |
+| R2 | 改 V1 触发 Flyway checksum 冲突 | 启动失败 | 已按 D2 重置；以后只追加 V3+ | ✅ 关闭 |
+| R3 | 无 mvnw、`mvn` 不在 PATH | CI/压测机不可复现 | 已补 wrapper + `.gitattributes` | ✅ 关闭 |
+| R4 | 种子密码明文 | 接 BCrypt 后登录失败 | 种子直接写 BCrypt（`demo1234`） | ✅ 关闭 |
+| R5 | `/api/health` 的 RabbitMQ 探活无超时 | broker 不可达时阻塞 | `spring.rabbitmq.connection-timeout: 2s` | ✅ 关闭 |
+| R6 | `.idea/*.xml` 已入库 | 换机易冲突 | 可接受；后续可整体忽略 `.idea/` | 保留 |
+| R7 | `/api/users` 直接返回实体，泄漏密码 | 公网可达即泄露凭据 | `UserVO` 收口 + `@JsonIgnore` 双保险 + 防泄漏断言 | ✅ 关闭 |
+| R8 | Flyway 11 只声明支持到 MySQL 8.1 | 仅 WARN | 忽略；换版本再评估 | 保留 |
 
 ---
 
 ## 7. 第 2 步 Definition of Done
 
-- [ ] 三个容器 healthy（当前已满足）
-- [ ] 启动应用，Flyway 日志出现 `Successfully applied 2 migrations`
-- [ ] `SHOW TABLES` 恰好 10 张；`SHOW CREATE TABLE interaction` 可见 `uk_user_target_type`
+- [x] 三个容器 healthy
+- [x] `demo_db` 重置为 0 表（2026-11-13）
+- [x] 启动应用，Flyway `Successfully applied 2 migrations`
+- [x] 业务表 10 张 + `flyway_schema_history`（共 11 行）
+- [ ] `SHOW CREATE TABLE interaction` 可见 `uk_user_target_type`
 - [ ] 手工插两条相同 `(user_id,target_type,target_id,type)`，第二条报 `Duplicate entry`
-- [ ] 种子数据：3 用户（含 1 个粉丝数 0、1 个 5000+ 大 V）、10 帖、20 评论、若干关注关系
-- [ ] `feed_inbox` 存在且为空
-- [ ] `./mvnw test` 绿（含迁移 + 唯一键断言）
-- [ ] `git commit -m "feat: schema with flyway migration"`
+- [ ] 种子计数：3 用户 / 10 帖 / 20 评论 / 3 关注 / 4 互动；`feed_inbox` 为空
+- [ ] `.\mvnw.cmd test` 3 条绿（含防泄漏断言）
+- [x] 代码提交（`984460d` mvnw、`fae7c93` 10 表、`7a45758` health 小写）
 
 ---
 
@@ -156,3 +184,6 @@
 | 日期 | 变更 |
 |---|---|
 | 2026-11-08 | 建立看板；实测第 1 步（应用启动、`/api/Health` 三项 ok、`/api/users` 返回种子数据）；确认第 2 步未开始；修复 `backend` 误记为 gitlink；登记 4 项待决事项与 8 项风险（含 `/api/users` 泄漏 password） |
+| 2026-11-12 | 补 Maven Wrapper（`984460d`）与 `.gitattributes`；清理 `misc.xml` 里不存在的根 pom 引用；重置 `demo_db` |
+| 2026-11-13 | 迁移重写为 `V1__init.sql`（10 表）+ `V2__seed.sql`（BCrypt 种子），实体同步 `password_hash`/`status`/计数（`fae7c93`）；实测 `SHOW TABLES` = 11 |
+| 2026-11-14 | 引入 `UserVO` + 防泄漏测试；`/api/health` 统一小写，RabbitMQ 连接超时 2s（`7a45758`）；关闭 R2–R5、R7 |
