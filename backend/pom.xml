@@ -128,7 +128,25 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
+
+        <!-- spring-context 自带 @Configuration -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+            <version>6.2.0</version>
+        </dependency>
+
+
+        <!-- ========== 安全 ========== -->
+        <!-- 版本由 Boot 3.5 的 BOM 管理，不用手写。
+             starter 里已包含 spring-security-crypto：
+             第 ②③ 步生成/校验 BCrypt 就靠它，不需要再单独引 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
     </dependencies>
+
 
     <build>
         <plugins>
@@ -160,7 +178,7 @@
                     </annotationProcessorPaths>
                 </configuration>
             </plugin>
-            <!-- 用错 JDK 是首次构建最常见的失败，这里直接锁死 -->
+            <!-- 用错 JDK 是首次构建最常见失败，这里直接锁死 -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>
