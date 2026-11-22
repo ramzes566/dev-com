@@ -89,3 +89,10 @@ logging:
   level:
     root: info
     com.y1.community: info
+
+app:
+  jwt:
+    # HS256 要求密钥至少 32 字节；生产用环境变量 JWT_SECRET 覆盖
+    secret: ${JWT_SECRET:dev-only-please-change-this-secret-32bytes!}
+    access-ttl: 15m
+    refresh-ttl: 7d

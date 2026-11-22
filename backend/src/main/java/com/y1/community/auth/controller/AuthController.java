@@ -2,6 +2,7 @@ package com.y1.community.auth.controller;
 
 import com.y1.community.auth.dto.LoginRequest;
 import com.y1.community.auth.dto.RegisterRequest;
+import com.y1.community.auth.dto.TokenResponse;
 import com.y1.community.auth.service.AuthService;
 import com.y1.community.user.vo.UserVO;
 import jakarta.validation.Valid;
@@ -29,7 +30,7 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public UserVO login(@Valid @RequestBody LoginRequest req) {
+    public TokenResponse login(@Valid @RequestBody LoginRequest req) {
         return authService.login(req);
     }
 

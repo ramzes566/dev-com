@@ -1,0 +1,13 @@
+{
+  "audience": "项目开发者 / 维护者",
+  "reader_task": "理解项目 JWT 认证的完整工作流程并能定位关键代码",
+  "genre_contract": "router.knowledge",
+  "adapter": null,
+  "presentation_mode": "normal",
+  "visual_plan": {
+    "reason": "JWT 流程涉及登录、签发、请求携带、过滤校验等步骤，需要画板展示时序",
+    "blocks": [
+      {"type": "whiteboard", "min_count": 1, "purpose": "展示 JWT 认证完整流程时序图"}
+    ]
+  }
+}

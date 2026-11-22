@@ -1,0 +1,42 @@
+sequenceDiagram
+    actor Client as 客户端
+    participant Filter as JwtAuthenticationFilter
+    participant Controller as AuthController
+    participant Service as AuthService
+    participant JwtService as JwtService
+    participant DB as MySQL
+
+    Note over Client, DB: 一、注册
+    Client->>Controller: POST /api/auth/register
+    Controller->>Service: register(RegisterRequest)
+    Service->>DB: INSERT user (password BCrypt加密)
+    DB-->>Service: 返回用户
+    Service-->>Controller: UserVO
+    Controller-->>Client: 201 Created
+
+    Note over Client, DB: 二、登录签发 JWT
+    Client->>Controller: POST /api/auth/login {username, password}
+    Controller->>Service: login(LoginRequest)
+    Service->>Service: AuthenticationManager.authenticate()
+    Service->>Service: DbUserDetailsService.loadUserByUsername()
+    Service->>DB: SELECT user WHERE username = ?
+    DB-->>Service: 返回UserDetails
+    Service->>Service: 密码校验 / 封禁检查
+    Service->>JwtService: createAccessToken(user)
+    JwtService->>JwtService: Jwts.builder().signWith(HS256)
+    JwtService-->>Service: accessToken
+    Service-->>Controller: TokenResponse
+    Controller-->>Client: 200 OK {accessToken, tokenType, expiresIn}
+
+    Note over Client, DB: 三、携带 JWT 访问受保护接口
+    Client->>Filter: GET /api/user/me<br/>Authorization: Bearer eyJhbGci...
+    Filter->>Filter: 提取 Bearer Token
+    Filter->>JwtService: parse(token)
+    JwtService->>JwtService: verifyWith(key) / parseSignedClaims
+    JwtService-->>Filter: Claims (sub=userId, username, typ, exp)
+    Filter->>Filter: 构造 UsernamePasswordAuthenticationToken
+    Filter->>Filter: 写入 SecurityContextHolder
+    Filter->>Controller: 放行（已认证）
+    Controller-->>Client: 200 OK 返回数据
+
+    Note over Filter: Token 过期 / 无效时<br/>SecurityContextHolder.clearContext()<br/>请求仍会放行但无认证信息

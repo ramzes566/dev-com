@@ -1,6 +1,8 @@
 package com.y1.community.auth.service;
 
 import com.y1.community.auth.dto.LoginRequest;
+import com.y1.community.auth.dto.TokenResponse;
+import com.y1.community.security.JwtService;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -22,13 +24,16 @@ public class AuthService {
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
+    private final JwtService jwtService;
 
     public AuthService(UserMapper userMapper,
                        PasswordEncoder passwordEncoder,
-                       AuthenticationManager authenticationManager) {
+                       AuthenticationManager authenticationManager,
+                       JwtService jwtService) {
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.authenticationManager = authenticationManager;
+        this.jwtService = jwtService;
     }
 
     public UserVO register(RegisterRequest req) {
@@ -55,7 +60,7 @@ public class AuthService {
         return UserVO.from(userMapper.selectById(user.getId()));
     }
 
-    public UserVO login(LoginRequest req) {
+    public TokenResponse login(LoginRequest req) {
         try {
             authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(req.username(), req.password()));
@@ -67,8 +72,10 @@ public class AuthService {
 
         User user = userMapper.selectOne(
                 Wrappers.<User>lambdaQuery().eq(User::getUsername, req.username()));
-        return UserVO.from(user);
 
+        String accessToken = jwtService.createAccessToken(user);
+        return TokenResponse.bearer(accessToken,
+                jwtService.accessTtlSeconds());
 
     }
 
