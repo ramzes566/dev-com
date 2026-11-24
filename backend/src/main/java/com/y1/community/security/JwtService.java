@@ -17,6 +17,7 @@ public class JwtService {
 
     private final SecretKey key;
     private final Duration accessTtl;
+    private final Duration refreshTtl;
 
     public JwtService(JwtProperties props) {
         byte[] bytes = props.secret().getBytes(StandardCharsets.UTF_8);
@@ -25,6 +26,7 @@ public class JwtService {
         }
         this.key = Keys.hmacShaKeyFor(bytes);
         this.accessTtl = props.accessTtl();
+        this.refreshTtl = props.refreshTtl();
     }
 
     public String createAccessToken(User user) {
@@ -45,6 +47,22 @@ public class JwtService {
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
+    }
+
+    public String createRefreshToken(User user, String jti) {
+        Date now = new Date();
+        return Jwts.builder()
+                .id(jti)
+                .subject(String.valueOf(user.getId()))
+                .claim("typ", "refresh")
+                .issuedAt(now)
+                .expiration(new Date(now.getTime() + refreshTtl.toMillis()))
+                .signWith(key)
+                .compact();
+    }
+
+    public Duration refreshTtl() {
+        return refreshTtl;
     }
 
     public long accessTtlSeconds() {

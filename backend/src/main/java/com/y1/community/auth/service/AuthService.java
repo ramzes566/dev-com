@@ -1,23 +1,28 @@
 package com.y1.community.auth.service;
 
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.y1.community.auth.dto.LoginRequest;
+import com.y1.community.auth.dto.RegisterRequest;
 import com.y1.community.auth.dto.TokenResponse;
 import com.y1.community.security.JwtService;
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.security.authentication.DisabledException;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.AuthenticationException;
-import org.springframework.util.StringUtils;
-import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.y1.community.auth.dto.RegisterRequest;
+import com.y1.community.security.RefreshTokenStore;
 import com.y1.community.user.entity.User;
 import com.y1.community.user.mapper.UserMapper;
 import com.y1.community.user.vo.UserVO;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.DisabledException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
+
+import java.util.UUID;
 
 @Service
 public class AuthService {
@@ -25,15 +30,17 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
+    private final RefreshTokenStore refreshTokenStore;
 
     public AuthService(UserMapper userMapper,
                        PasswordEncoder passwordEncoder,
                        AuthenticationManager authenticationManager,
-                       JwtService jwtService) {
+                       JwtService jwtService, RefreshTokenStore refreshTokenStore) {
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.authenticationManager = authenticationManager;
         this.jwtService = jwtService;
+        this.refreshTokenStore = refreshTokenStore;
     }
 
     public UserVO register(RegisterRequest req) {
@@ -73,10 +80,52 @@ public class AuthService {
         User user = userMapper.selectOne(
                 Wrappers.<User>lambdaQuery().eq(User::getUsername, req.username()));
 
-        String accessToken = jwtService.createAccessToken(user);
-        return TokenResponse.bearer(accessToken,
-                jwtService.accessTtlSeconds());
+        return issueToken(user);
 
+    }
+
+    private TokenResponse issueToken(User user) {
+        String accessToken = jwtService.createAccessToken(user);
+
+        String jti = UUID.randomUUID().toString();
+        String refreshToken = jwtService.createRefreshToken(user, jti);
+        refreshTokenStore.save(jti, user.getId(), jwtService.refreshTtl());
+
+        return TokenResponse.bearer(accessToken, refreshToken, jwtService.accessTtlSeconds());
+    }
+
+    public TokenResponse refresh(String refreshToken) {
+        Claims claims = parseRefresh(refreshToken);
+        String jti = claims.getId();
+        Long userId = Long.valueOf(claims.getSubject());
+
+        if(!refreshTokenStore.consume(jti)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "refresh token 已失效");
+        }
+
+        User user = userMapper.selectById(userId);
+        if (user == null || Integer.valueOf(2).equals(user.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "账号不可用");
+        }
+        return issueToken(user);
+    }
+
+    public void logout(String refreshToken) {
+        try {
+            refreshTokenStore.revoke(parseRefresh(refreshToken).getId());
+        } catch (ResponseStatusException ignored) {}
+    }
+
+    private Claims parseRefresh(String token) {
+        try {
+            Claims claims = jwtService.parse(token);
+            if (!"refresh".equals(claims.get("typ", String.class))) {
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "token 类型不对");
+            }
+            return claims;
+        } catch (JwtException | IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "refresh token 无效");
+        }
     }
 
 }

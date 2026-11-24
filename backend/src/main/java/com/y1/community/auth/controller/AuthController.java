@@ -1,6 +1,7 @@
 package com.y1.community.auth.controller;
 
 import com.y1.community.auth.dto.LoginRequest;
+import com.y1.community.auth.dto.RefreshRequest;
 import com.y1.community.auth.dto.RegisterRequest;
 import com.y1.community.auth.dto.TokenResponse;
 import com.y1.community.auth.service.AuthService;
@@ -34,4 +35,14 @@ public class AuthController {
         return authService.login(req);
     }
 
+    @PostMapping("/refresh")
+    public TokenResponse refresh(@Valid @RequestBody RefreshRequest req) {
+        return  authService.refresh(req.refreshToken());
+    }
+
+    @PostMapping("/logout")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void logout(@Valid @RequestBody RefreshRequest req) {
+        authService.logout(req.refreshToken());
+    }
 }
