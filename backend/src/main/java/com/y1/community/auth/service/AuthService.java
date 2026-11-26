@@ -80,11 +80,11 @@ public class AuthService {
         User user = userMapper.selectOne(
                 Wrappers.<User>lambdaQuery().eq(User::getUsername, req.username()));
 
-        return issueToken(user);
+        return issueTokens(user);
 
     }
 
-    private TokenResponse issueToken(User user) {
+    private TokenResponse issueTokens(User user) {
         String accessToken = jwtService.createAccessToken(user);
 
         String jti = UUID.randomUUID().toString();
@@ -107,7 +107,7 @@ public class AuthService {
         if (user == null || Integer.valueOf(2).equals(user.getStatus())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "账号不可用");
         }
-        return issueToken(user);
+        return issueTokens(user);
     }
 
     public void logout(String refreshToken) {
